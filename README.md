@@ -8,19 +8,10 @@ MRuby::Build.new do |conf|
 
     # ... (snip) ...
 
+    conf.enable_debug
+    conf.cc.defines = %w(MRB_ENABLE_DEBUG_HOOK)
     conf.gem :github => 'masahino/mruby-debug'
 end
-```
-## example
-```ruby
-p Debug.hi
-#=> "hi!!"
-t = Debug.new "hello"
-p t.hello
-#=> "hello"
-p t.bye
-#=> "hello bye"
-```
 
 ## License
 under the MIT License:

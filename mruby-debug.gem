@@ -1,0 +1,7 @@
+name: mruby-debug
+description: Debug class
+author: masahino
+website: https://github.com/masahino/mruby-debug
+protocol: git
+repository: https://github.com/masahino/mruby-debug.git
+license: MIT

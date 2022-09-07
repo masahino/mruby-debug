@@ -55,9 +55,9 @@ mrb_gdb_get_callinfosize(mrb_state *mrb)
   mrb_int ciidx;
   int i;
   int lineno = -1;
-    
+
   ciidx = mrb->c->ci - mrb->c->cibase;
-    
+
   for (i = ciidx; i >= 0; i--) {
     ci = &mrb->c->cibase[i];
     if (ci->proc == NULL || MRB_PROC_CFUNC_P(ci->proc)) {
@@ -65,7 +65,7 @@ mrb_gdb_get_callinfosize(mrb_state *mrb)
     }else {
       const mrb_irep *irep = ci->proc->body.irep;
       const mrb_code *pc;
-            
+
       if (mrb->c->cibase[i].pc) {
         pc = mrb->c->cibase[i].pc;
       }else if (i+1 <= ciidx) {
@@ -128,29 +128,91 @@ mrb_debug_get_local_variables(struct mrb_state* mrb) {
 
   locals = mrb_ary_new(mrb);
   for (i = 0; i + 1 < local_len; i++) {
-    mrb_value mlv = mrb_hash_new(mrb);
     if (irep->lv[i] == 0){
       continue;
     }
-    uint16_t reg = i + 1;
     mrb_sym sym = irep->lv[i];if (!sym){ continue;}
     symname = mrb_sym2name(mrb, sym);
     if (strcmp(symname, "*") == 0 || strcmp(symname, "&") == 0 ) {
       continue;
     }
-    mrb_value v2 = mrb->c->ci->stack[reg];
-    const char *v2_classname = mrb_obj_classname(mrb, v2);
-    mrb_hash_set(mrb, mlv, mrb_str_new_cstr(mrb, "name"), mrb_sym_str(mrb, sym));
-    mrb_value v2_value = mrb_funcall(mrb, v2, "inspect", 0);
-
-    mrb_hash_set(mrb, mlv, mrb_str_new_cstr(mrb, "name"), mrb_sym_str(mrb, sym));
-    mrb_hash_set(mrb, mlv, mrb_str_new_cstr(mrb, "value"), v2_value);
-    mrb_hash_set(mrb, mlv, mrb_str_new_cstr(mrb, "type"), mrb_str_new_cstr(mrb, v2_classname));
-    mrb_ary_push(mrb, locals, mlv);
+    mrb_ary_push(mrb, locals, mrb_sym_str(mrb, sym));
   }
   locals_cstr = mrb_str_to_cstr(mrb, mrb_funcall(mrb, locals, "inspect", 0));
   mrb->code_fetch_hook = mrb_debug_code_fetch;
   return locals_cstr;
+}
+
+static const char *
+mrb_debug_get_local_variable(struct mrb_state* mrb, const char* symname) {
+  mrb_value var;
+  mrb_sym sym2 = mrb_intern_cstr(mrb, symname);
+
+  char *locals_cstr;
+
+  int i = 0;
+  const struct mrb_irep *irep;
+  int local_len = 0;
+
+  if(mrb == NULL){
+    return "{}";
+  }
+  irep = mrb->c->ci->proc->body.irep;
+  local_len = local_size(irep);
+
+  mrb->code_fetch_hook = NULL;
+
+  var = mrb_hash_new(mrb);
+  for (i = 0; i + 1 < local_len; i++) {
+    if (irep->lv[i] == 0){
+      continue;
+    }
+    uint16_t reg = i + 1;
+    mrb_sym sym = irep->lv[i];if (!sym){ continue;}
+    if (sym == sym2) {
+      mrb_value v2 = mrb->c->ci->stack[reg];
+      const char *v2_classname = mrb_obj_classname(mrb, v2);
+      mrb_hash_set(mrb, var, mrb_str_new_cstr(mrb, "name"), mrb_sym_str(mrb, sym));
+      mrb_value v2_value = mrb_funcall(mrb, v2, "inspect", 0);
+
+      mrb_hash_set(mrb, var, mrb_str_new_cstr(mrb, "value"), v2_value);
+      mrb_hash_set(mrb, var, mrb_str_new_cstr(mrb, "type"), mrb_str_new_cstr(mrb, v2_classname));
+      break;
+    }
+  }
+  locals_cstr = mrb_str_to_cstr(mrb, mrb_funcall(mrb, var, "inspect", 0));
+  mrb->code_fetch_hook = mrb_debug_code_fetch;
+  return locals_cstr;
+}
+
+static const char *
+mrb_debug_get_variables_all(struct mrb_state *mrb, iv_tbl *t) {
+  mrb_value vars;
+  int i;
+
+  if (t == NULL || t->alloc == 0 || t->size == 0) {
+    return "[]";
+  }
+
+  vars = mrb_ary_new(mrb);
+
+  mrb_sym *keys = (mrb_sym*)&t->ptr[t->alloc];
+  mrb_value *vals = t->ptr;
+  for (i = 0; i < t->alloc; i++) {
+    if (IV_KEY_P(keys[i])) {
+      mrb_value tmp_v = mrb_hash_new(mrb);
+      mrb_hash_set(mrb, tmp_v, mrb_str_new_cstr(mrb, "name"), mrb_sym_str(mrb, keys[i]));
+      if (mrb_nil_p(vals[i]) || mrb_true_p(vals[i]) || mrb_false_p(vals[i]) || mrb_string_p(vals[i]) || mrb_fixnum_p(vals[i])) {
+        mrb_hash_set(mrb, tmp_v, mrb_str_new_cstr(mrb, "value"), mrb_funcall(mrb, vals[i], "inspect", 0));
+      } else {
+        mrb_hash_set(mrb, tmp_v, mrb_str_new_cstr(mrb, "value"), mrb_any_to_s(mrb, vals[i]));
+      }
+      const char *v2_classname = mrb_obj_classname(mrb, vals[i]);
+      mrb_hash_set(mrb, tmp_v, mrb_str_new_cstr(mrb, "type"), mrb_str_new_cstr(mrb, v2_classname));
+      mrb_ary_push(mrb, vars, tmp_v);
+    }
+  }
+  return mrb_str_to_cstr(mrb, mrb_funcall(mrb, vars, "inspect", 0));
 }
 
 static const char *
@@ -163,20 +225,45 @@ mrb_debug_get_variables(struct mrb_state *mrb, iv_tbl *t) {
   }
 
   vars = mrb_ary_new(mrb);
-  
+
+  mrb_sym *keys = (mrb_sym*)&t->ptr[t->alloc];
+  for (i = 0; i < t->alloc; i++) {
+    if (IV_KEY_P(keys[i])) {
+      mrb_ary_push(mrb, vars, mrb_sym_str(mrb, keys[i]));
+    }
+  }
+  return mrb_str_to_cstr(mrb, mrb_funcall(mrb, vars, "inspect", 0));
+}
+
+static const char *
+mrb_debug_get_variable(struct mrb_state *mrb, iv_tbl *t, const char *symname) {
+  mrb_value var;
+  mrb_sym sym2 = mrb_intern_cstr(mrb, symname);
+  int i;
+
+  if (t == NULL || t->alloc == 0 || t->size == 0) {
+    return "[]";
+  }
+
+  var = mrb_hash_new(mrb);
+
   mrb_sym *keys = (mrb_sym*)&t->ptr[t->alloc];
   mrb_value *vals = t->ptr;
   for (i = 0; i < t->alloc; i++) {
     if (IV_KEY_P(keys[i])) {
-      mrb_value tmp_v = mrb_hash_new(mrb);
-      mrb_hash_set(mrb, tmp_v, mrb_str_new_cstr(mrb, "name"), mrb_sym_str(mrb, keys[i]));
-      mrb_hash_set(mrb, tmp_v, mrb_str_new_cstr(mrb, "value"), mrb_funcall(mrb, vals[i], "inspect", 0));
-      const char *v2_classname = mrb_obj_classname(mrb, vals[i]);
-      mrb_hash_set(mrb, tmp_v, mrb_str_new_cstr(mrb, "type"), mrb_str_new_cstr(mrb, v2_classname));
-      mrb_ary_push(mrb, vars, tmp_v);
+      if (keys[i] == sym2) {
+        mrb_hash_set(mrb, var, mrb_str_new_cstr(mrb, "name"), mrb_sym_str(mrb, keys[i]));
+        if (mrb_nil_p(vals[i]) || mrb_true_p(vals[i]) || mrb_false_p(vals[i]) || mrb_string_p(vals[i]) || mrb_fixnum_p(vals[i])) {
+          mrb_hash_set(mrb, var, mrb_str_new_cstr(mrb, "value"), mrb_funcall(mrb, vals[i], "inspect", 0));
+        } else {
+          mrb_hash_set(mrb, var, mrb_str_new_cstr(mrb, "value"), mrb_any_to_s(mrb, vals[i]));
+        }
+        const char *v2_classname = mrb_obj_classname(mrb, vals[i]);
+        mrb_hash_set(mrb, var, mrb_str_new_cstr(mrb, "type"), mrb_str_new_cstr(mrb, v2_classname));
+      }
     }
   }
-  return mrb_str_to_cstr(mrb, mrb_funcall(mrb, vars, "inspect", 0));
+  return mrb_str_to_cstr(mrb, mrb_funcall(mrb, var, "inspect", 0));
 }
 
 static const char *
@@ -191,6 +278,23 @@ mrb_debug_get_global_variables(struct mrb_state* mrb) {
 
   mrb->code_fetch_hook = NULL;
   vars_cstr = mrb_debug_get_variables(mrb, t);
+  mrb->code_fetch_hook = mrb_debug_code_fetch;
+
+  return vars_cstr;
+}
+
+static const char *
+mrb_debug_get_global_variable(struct mrb_state* mrb, const char *symname) {
+  const char *vars_cstr;
+  iv_tbl *t;
+
+  if(mrb == NULL){
+    return "{}";
+  }
+  t = mrb->globals;
+
+  mrb->code_fetch_hook = NULL;
+  vars_cstr = mrb_debug_get_variable(mrb, t, symname);
   mrb->code_fetch_hook = mrb_debug_code_fetch;
 
   return vars_cstr;
@@ -235,6 +339,28 @@ mrb_debug_get_instance_variables(struct mrb_state* mrb) {
   return vars_cstr;
 }
 
+static const char *
+mrb_debug_get_instance_variable(struct mrb_state* mrb, const char *symname) {
+  mrb_value self_obj;
+  const char *vars_cstr;
+  iv_tbl *t;
+
+  if (mrb == NULL) {
+    return "{}";
+  }
+
+  self_obj = mrb->c->ci->stack[0];
+  if (!obj_iv_p(self_obj)) {
+    return "{}";
+  }
+  t = mrb_obj_ptr(self_obj)->iv;
+  mrb->code_fetch_hook = NULL;
+  vars_cstr = mrb_debug_get_variable(mrb, t, symname);
+
+  mrb->code_fetch_hook = mrb_debug_code_fetch;
+  return vars_cstr;
+}
+
 static mrb_value
 mrb_debug_get_local_variables_m(struct mrb_state* mrb, mrb_value self)
 {
@@ -256,6 +382,42 @@ mrb_debug_get_instance_variables_m(struct mrb_state* mrb, mrb_value self)
   return mrb_str_new_cstr(mrb, str);
 }
 
+static mrb_value
+mrb_debug_get_global_variable_m(struct mrb_state* mrb, mrb_value self)
+{
+  mrb_sym sym;
+  const char *symname;
+  const char *value;
+  mrb_get_args(mrb, "n", &sym);
+  symname = mrb_sym2name(mrb, sym);
+  value = mrb_debug_get_global_variable(mrb, symname);
+  return mrb_str_new_cstr(mrb, value);
+}
+
+static mrb_value
+mrb_debug_get_instance_variable_m(struct mrb_state* mrb, mrb_value self)
+{
+  mrb_sym sym;
+  const char *symname;
+  const char *value;
+  mrb_get_args(mrb, "n", &sym);
+  symname = mrb_sym2name(mrb, sym);
+  value = mrb_debug_get_instance_variable(mrb, symname);
+  return mrb_str_new_cstr(mrb, value);
+}
+
+static mrb_value
+mrb_debug_get_local_variable_m(struct mrb_state* mrb, mrb_value self)
+{
+  mrb_sym sym;
+  const char *symname;
+  const char *value;
+  mrb_get_args(mrb, "n", &sym);
+  symname = mrb_sym2name(mrb, sym);
+  value = mrb_debug_get_local_variable(mrb, symname);
+  return mrb_str_new_cstr(mrb, value);
+}
+
 void mrb_mruby_debug_gem_init(mrb_state *mrb)
 {
   struct RClass *debug;
@@ -264,8 +426,11 @@ void mrb_mruby_debug_gem_init(mrb_state *mrb)
 
   debug = mrb_define_module(mrb, "Debug");
   mrb_define_class_method(mrb, debug, "local_variables", mrb_debug_get_local_variables_m, MRB_ARGS_NONE());
+  mrb_define_class_method(mrb, debug, "local_variable", mrb_debug_get_local_variable_m, MRB_ARGS_REQ(1));
   mrb_define_class_method(mrb, debug, "global_variables", mrb_debug_get_global_variables_m, MRB_ARGS_NONE());
+  mrb_define_class_method(mrb, debug, "global_variable", mrb_debug_get_global_variable_m, MRB_ARGS_REQ(1));
   mrb_define_class_method(mrb, debug, "instance_variables", mrb_debug_get_instance_variables_m, MRB_ARGS_NONE());
+  mrb_define_class_method(mrb, debug, "instance_variable", mrb_debug_get_instance_variable_m, MRB_ARGS_REQ(1));
 
 }
 

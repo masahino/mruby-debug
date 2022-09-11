@@ -20,19 +20,23 @@
 #include "mrb_debug.h"
 
 const char *prev_filename = NULL;
-const char * filename = NULL;
-char ret[RETURN_BUF_SIZE];
+const char *filename = NULL;
+const char *bp_filename = NULL;
 int32_t prev_line = -1;
 int32_t prev_ciidx = 999;
+int32_t bp_ciidx = 999;
 int32_t line = -1;
+int32_t bp_line = -1;
 int32_t ciidx = 999;
 int32_t prev_callinfo_size = 0;
+mrb_callinfo *bp_ci = NULL;
 
 /* Instance variable table structure */
 typedef struct iv_tbl {
   int size, alloc;
   mrb_value *ptr;
 } iv_tbl;
+
 #define IV_DELETED (1UL<<31)
 #define IV_KEY_P(k) (((k)&~((uint32_t)IV_DELETED))!=0)
 
@@ -48,7 +52,7 @@ md_strcmp(const char *s1, const char *s2)
 }
 
 static mrb_int
-mrb_gdb_get_callinfosize(mrb_state *mrb)
+mrb_debug_get_callinfosize(mrb_state *mrb)
 {
   mrb_int len = 0;
   mrb_callinfo *ci;
@@ -62,25 +66,66 @@ mrb_gdb_get_callinfosize(mrb_state *mrb)
     ci = &mrb->c->cibase[i];
     if (ci->proc == NULL || MRB_PROC_CFUNC_P(ci->proc)) {
       continue;
-    }else {
+    } else {
       const mrb_irep *irep = ci->proc->body.irep;
       const mrb_code *pc;
 
       if (mrb->c->cibase[i].pc) {
         pc = mrb->c->cibase[i].pc;
-      }else if (i+1 <= ciidx) {
+      } else if (i+1 <= ciidx) {
         pc = mrb->c->cibase[i+1].pc - 1;
-      }else {
+      } else {
         pc = ci->pc; //continue;
       }
       lineno = mrb_debug_get_line(mrb, irep, pc - irep->iseq);
     }
-    if (lineno == -1){
+    if (lineno == -1) {
       continue;
     }
     len++;
   }
   return len;
+}
+
+void
+mrb_break(mrb_state *mrb)
+{
+  bp_filename = filename;
+  bp_line = line;
+  bp_ci = mrb->c->ci;
+  bp_ciidx = mrb_debug_get_callinfosize(mrb);
+}
+
+volatile int
+mrb_check_next(mrb_state *mrb)
+{
+  if (filename == NULL || (bp_filename == filename && bp_line == line)) {
+    return 0;
+  }
+  if ((intptr_t)(bp_ci) < (intptr_t)(mrb->c->ci)) {
+    return 0;
+  }
+  bp_ci = NULL;
+  bp_filename = NULL;
+  bp_line = -1;
+  bp_ciidx = 999;
+  return 1;
+}
+
+volatile int
+mrb_check_stepout(mrb_state *mrb)
+{
+  if (filename == NULL || (bp_filename == filename && bp_line == line)) {
+    return 0;
+  }
+  if (bp_ciidx <= mrb_debug_get_callinfosize(mrb)) {
+    return 0;
+  }
+  bp_ci = NULL;
+  bp_filename = NULL;
+  bp_line = -1;
+  bp_ciidx = 999;
+  return 1;
 }
 
 /* dummy function for fnuctionBreakpoint */
@@ -93,19 +138,20 @@ mrb_debug_code_fetch(mrb_state *mrb, const mrb_irep *irep, const mrb_code *pc, m
 {
   filename = mrb_debug_get_filename(mrb, irep, pc - irep->iseq);
   line = mrb_debug_get_line(mrb, irep, pc - irep->iseq);
-  if(filename == NULL || line == -1){
+  if (filename == NULL || line == -1) {
     return;
   }
-  if (prev_filename && filename && strcmp(prev_filename, filename) == 0 && prev_line == line) {
+//  if (prev_filename && filename && strcmp(prev_filename, filename) == 0 && prev_line == line) {
+  if (prev_filename == filename && prev_line == line) {
     return;
-  }
-  if (filename && line >= 0) {
-    ciidx = (int)mrb_gdb_get_callinfosize(mrb);
-    prev_filename = filename;
-    prev_line = line;
-    prev_ciidx = ciidx;
   }
   mrb_debug_breakpoint_function(mrb);
+  if (filename && line >= 0) {
+//    ciidx = (int)mrb_debug_get_callinfosize(mrb);
+    prev_filename = filename;
+    prev_line = line;
+//    prev_ciidx = ciidx;
+  }
 }
 
 static const char *

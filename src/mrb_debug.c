@@ -23,12 +23,9 @@ const char *prev_filename = NULL;
 const char *filename = NULL;
 const char *bp_filename = NULL;
 int32_t prev_line = -1;
-int32_t prev_ciidx = 999;
 int32_t bp_ciidx = 999;
 int32_t line = -1;
 int32_t bp_line = -1;
-int32_t ciidx = 999;
-int32_t prev_callinfo_size = 0;
 mrb_callinfo *bp_ci = NULL;
 
 /* Instance variable table structure */
@@ -102,7 +99,8 @@ mrb_check_next(mrb_state *mrb)
   if (filename == NULL || (bp_filename == filename && bp_line == line)) {
     return 0;
   }
-  if ((intptr_t)(bp_ci) < (intptr_t)(mrb->c->ci)) {
+  //if ((intptr_t)(bp_ci) < (intptr_t)(mrb->c->ci)) {
+  if (mrb_debug_get_callinfosize(mrb) > bp_ciidx) {
     return 0;
   }
   bp_ci = NULL;
@@ -128,8 +126,22 @@ mrb_check_stepout(mrb_state *mrb)
   return 1;
 }
 
+#define MRB_DEBUG_NOP do {} while (0)
 /* dummy function for fnuctionBreakpoint */
 void mrb_debug_breakpoint_function(struct mrb_state *mrb) {
+  MRB_DEBUG_NOP;
+  // n
+  // s
+  // 1
+  // 2
+  // 3
+  // 4
+  // 5
+  // 6
+  // 7
+  // 8
+  // 9
+  // 10
   return;
 }
 
@@ -147,10 +159,8 @@ mrb_debug_code_fetch(mrb_state *mrb, const mrb_irep *irep, const mrb_code *pc, m
   }
   mrb_debug_breakpoint_function(mrb);
   if (filename && line >= 0) {
-//    ciidx = (int)mrb_debug_get_callinfosize(mrb);
     prev_filename = filename;
     prev_line = line;
-//    prev_ciidx = ciidx;
   }
 }
 

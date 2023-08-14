@@ -130,38 +130,37 @@ mrb_check_stepout(mrb_state *mrb)
 /* dummy function for fnuctionBreakpoint */
 void mrb_debug_breakpoint_function(struct mrb_state *mrb) {
   MRB_DEBUG_NOP;
-  // n
-  // s
-  // 1
-  // 2
-  // 3
-  // 4
-  // 5
-  // 6
-  // 7
-  // 8
-  // 9
-  // 10
+  MRB_DEBUG_NOP; // n
+  MRB_DEBUG_NOP; // s
+  MRB_DEBUG_NOP; // 1
+  MRB_DEBUG_NOP; // 2
+  MRB_DEBUG_NOP; // 3
+  MRB_DEBUG_NOP; // 4
+  MRB_DEBUG_NOP; // 5
+  MRB_DEBUG_NOP; // 6
+  MRB_DEBUG_NOP; // 7
+  MRB_DEBUG_NOP; // 8
+  MRB_DEBUG_NOP; // 9
+  MRB_DEBUG_NOP; // 10
   return;
 }
 
-static void
-mrb_debug_code_fetch(mrb_state *mrb, const mrb_irep *irep, const mrb_code *pc, mrb_value *regs)
-{
+static void mrb_debug_code_fetch(mrb_state *mrb, const mrb_irep *irep,
+                                 const mrb_code *pc, mrb_value *regs) {
   filename = mrb_debug_get_filename(mrb, irep, pc - irep->iseq);
-  line = mrb_debug_get_line(mrb, irep, pc - irep->iseq);
-  if (filename == NULL || line == -1) {
+  if (filename == NULL) {
     return;
   }
-//  if (prev_filename && filename && strcmp(prev_filename, filename) == 0 && prev_line == line) {
+  line = mrb_debug_get_line(mrb, irep, pc - irep->iseq);
+  if (line == -1) {
+    return;
+  }
   if (prev_filename == filename && prev_line == line) {
     return;
   }
   mrb_debug_breakpoint_function(mrb);
-  if (filename && line >= 0) {
-    prev_filename = filename;
-    prev_line = line;
-  }
+  prev_filename = filename;
+  prev_line = line;
 }
 
 static const char *
